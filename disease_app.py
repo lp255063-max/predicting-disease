@@ -56,16 +56,25 @@ def load_clean_data():
     np.random.seed(42)
     n_samples = 1000
     
+    # Heart disease types
+    heart_types = ['None', 'CHD', 'Arrhythmia', 'Heart Failure', 'Valvular']
+    
+    # Cancer stages
+    cancer_stages = ['None', 'Stage 1', 'Stage 2', 'Stage 3', 'Stage 4']
+    
     data = pd.DataFrame({
         'Age': np.random.randint(20, 80, n_samples),
         'Cholesterol': np.random.randint(150, 350, n_samples),
         'Blood_Pressure': np.random.randint(90, 190, n_samples),
         'Max_Heart_Rate': np.random.randint(100, 200, n_samples),
         'BMI': np.random.uniform(18, 40, n_samples),
-        # Randomly introduce missing values for cleaning demo
-        'Cholesterol': np.where(np.random.rand(n_samples) > 0.9, np.nan, data['Cholesterol']),
-        'BMI': np.where(np.random.rand(n_samples) > 0.9, np.nan, data['BMI'])
+        'Heart_Disease_Type': np.random.choice(heart_types, n_samples),
+        'Cancer_Stage': np.random.choice(cancer_stages, n_samples)
     })
+    
+    # Randomly introduce missing values for cleaning demo
+    data['Cholesterol'] = np.where(np.random.rand(n_samples) > 0.9, np.nan, data['Cholesterol'])
+    data['BMI'] = np.where(np.random.rand(n_samples) > 0.9, np.nan, data['BMI'])
     
     # Logic for Target Variable (Disease Outcome)
     # Higher probability of disease if BP > 140, Age > 50, Cholesterol > 240
@@ -79,10 +88,18 @@ def load_clean_data():
     # --- DATA HANDLING AND CLEANING ---
     # 1. Impute Missing Values (Mean Imputation)
     imputer = SimpleImputer(strategy='mean')
-    data_cleaned = pd.DataFrame(imputer.fit_transform(data), columns=data.columns)
+    numeric_cols = ['Age', 'Cholesterol', 'Blood_Pressure', 'Max_Heart_Rate', 'BMI']
+    data_numeric = data[numeric_cols].copy()
+    data_cleaned_numeric = pd.DataFrame(imputer.fit_transform(data_numeric), columns=numeric_cols)
+    
+    # Add categorical columns back
+    data_cleaned = data_cleaned_numeric.copy()
+    data_cleaned['Heart_Disease_Type'] = data['Heart_Disease_Type'].values
+    data_cleaned['Cancer_Stage'] = data['Cancer_Stage'].values
+    data_cleaned['Disease_Outcome'] = data['Disease_Outcome'].values
     
     # 2. Feature Selection
-    X = data_cleaned[['Age', 'Cholesterol', 'Blood_Pressure', 'Max_Heart_Rate', 'BMI']]
+    X = data_cleaned[numeric_cols]
     y = data_cleaned['Disease_Outcome']
     
     # 3. Scaling (Standardization)
@@ -129,7 +146,7 @@ page = st.sidebar.radio("Navigate", ["🏠 Home (Front)", "🔬 Analysis (Back)"
 
 # --- PAGE 1: CLASSIC FRONT PAGE (BRIGHT) ---
 if page == "🏠 Home (Front)":
-    apply_theme("bright_front")
+    apply_theme("fantastic_back")
     
     # Header
     st.title("Advanced Disease Prediction System")
@@ -262,17 +279,19 @@ elif page == "🔬 Analysis (Back)":
                 max_hr = st.slider("Max Heart Rate", 100, 220, 150)
                 bmi = st.slider("BMI", 15.0, 50.0, 28.5)
             
+            # Disease type selections
+            col_dis1, col_dis2 = st.columns(2)
+            with col_dis1:
+                heart_disease = st.selectbox("Heart Disease Type", 
+                    ['None', 'CHD (Coronary Heart Disease)', 'Arrhythmia', 'Heart Failure', 'Valvular Heart Disease'])
+            with col_dis2:
+                cancer_stage = st.selectbox("Cancer Stage", 
+                    ['None', 'Stage 1', 'Stage 2', 'Stage 3', 'Stage 4'])
+            
             submitted = st.form_submit_button("Diagnose Patient 🚀")
             
             if submitted:
                 # Need to scale input because model was trained on scaled data
-                # We use the mean/std from the dataset logic inside load_clean_data implicitly
-                # or just use raw model if tree-based (RF doesn't need scaling technically, but we did it above).
-                # For simplicity here, we re-fit a quick scaler on the raw data stats or just use raw if we didn't scale in pipeline.
-                # NOTE: In this specific code, we scaled X before training. 
-                # So we need to scale this input manually using the scaler object.
-                
-                # Recreating scaler stats for the demo (since scaler isn't global):
                 scaler_demo = StandardScaler()
                 scaler_demo.fit(raw_df[['Age', 'Cholesterol', 'Blood_Pressure', 'Max_Heart_Rate', 'BMI']])
                 
@@ -283,7 +302,24 @@ elif page == "🔬 Analysis (Back)":
                 proba = model.predict_proba(input_scaled)[0][1]
                 
                 # Display Result
-                if prediction == 1:
-                    st.error(f"⚠️ High Risk of Disease Detected ({proba*100:.1f}%)")
-                else:
-                    st.success(f"✅ Patient appears Healthy ({(1-proba)*100:.1f}% confidence)")
+                st.markdown("---")
+                st.subheader("📋 Diagnosis Report")
+                
+                col_res1, col_res2 = st.columns(2)
+                with col_res1:
+                    st.write(f"**Heart Disease Type:** {heart_disease}")
+                    st.write(f"**Cancer Stage:** {cancer_stage}")
+                
+                with col_res2:
+                    if prediction == 1:
+                        st.error(f"⚠️ High Risk Assessment ({proba*100:.1f}%)")
+                    else:
+                        st.success(f"✅ Healthy Profile ({(1-proba)*100:.1f}% confidence)")
+                
+                # Vital Signs Summary
+                st.write("**Vital Signs Summary:**")
+                vital_data = pd.DataFrame({
+                    'Metric': ['Age', 'Cholesterol', 'Blood Pressure', 'Max Heart Rate', 'BMI'],
+                    'Value': [age, chol, bpm, max_hr, f'{bmi:.1f}']
+                })
+                st.table(vital_data)
