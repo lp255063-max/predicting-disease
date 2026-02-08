@@ -6,8 +6,9 @@ import plotly.express as px
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_curve, auc
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.impute import SimpleImputer
+from sklearn.multiclass import OneVsRestClassifier
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="MediPulse AI", layout="wide", initial_sidebar_state="expanded")
@@ -98,31 +99,47 @@ def load_clean_data():
     data_cleaned['Cancer_Stage'] = data['Cancer_Stage'].values
     data_cleaned['Disease_Outcome'] = data['Disease_Outcome'].values
     
+    # Encode categorical variables for model training
+    le_heart = LabelEncoder()
+    le_cancer = LabelEncoder()
+    data_cleaned['Heart_Disease_Encoded'] = le_heart.fit_transform(data_cleaned['Heart_Disease_Type'])
+    data_cleaned['Cancer_Stage_Encoded'] = le_cancer.fit_transform(data_cleaned['Cancer_Stage'])
+    
     # 2. Feature Selection
     X = data_cleaned[numeric_cols]
     y = data_cleaned['Disease_Outcome']
+    y_heart = data_cleaned['Heart_Disease_Encoded']
+    y_cancer = data_cleaned['Cancer_Stage_Encoded']
     
     # 3. Scaling (Standardization)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
-    return X_scaled, y, data_cleaned
+    return X_scaled, y, data_cleaned, y_heart, y_cancer
 
-X, y, raw_df = load_clean_data()
+X, y, raw_df, y_heart, y_cancer = load_clean_data()
 
 # --- 4. MODEL SELECTION AND BUILDING ---
 @st.cache_resource
-def build_model(X, y):
+def build_model(X, y, y_heart, y_cancer):
     # Split Data
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
-    # Model Selection: Random Forest
+    # Model 1: Disease Risk Classifier
     model = RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42)
     model.fit(X_train, y_train)
     
-    return model, X_test, y_test, X_train, y_train
+    # Model 2: Heart Disease Type Classifier
+    model_heart = RandomForestClassifier(n_estimators=150, max_depth=8, random_state=42)
+    model_heart.fit(X_train, y_heart[:len(X_train)])
+    
+    # Model 3: Cancer Stage Classifier
+    model_cancer = RandomForestClassifier(n_estimators=150, max_depth=8, random_state=42)
+    model_cancer.fit(X_train, y_cancer[:len(X_train)])
+    
+    return model, X_test, y_test, X_train, y_train, model_heart, model_cancer
 
-model, X_test, y_test, X_train, y_train = build_model(X, y)
+model, X_test, y_test, X_train, y_train, model_heart, model_cancer = build_model(X, y, y_heart, y_cancer)
 
 # --- 5. EVALUATION METRICS ---
 def get_evaluation(model, X_test, y_test):
@@ -279,15 +296,6 @@ elif page == "🔬 Analysis (Back)":
                 max_hr = st.slider("Max Heart Rate", 100, 220, 150)
                 bmi = st.slider("BMI", 15.0, 50.0, 28.5)
             
-            # Disease type selections
-            col_dis1, col_dis2 = st.columns(2)
-            with col_dis1:
-                heart_disease = st.selectbox("Heart Disease Type", 
-                    ['None', 'CHD (Coronary Heart Disease)', 'Arrhythmia', 'Heart Failure', 'Valvular Heart Disease'])
-            with col_dis2:
-                cancer_stage = st.selectbox("Cancer Stage", 
-                    ['None', 'Stage 1', 'Stage 2', 'Stage 3', 'Stage 4'])
-            
             submitted = st.form_submit_button("Diagnose Patient 🚀")
             
             if submitted:
@@ -298,25 +306,46 @@ elif page == "🔬 Analysis (Back)":
                 input_data = np.array([[age, chol, bpm, max_hr, bmi]])
                 input_scaled = scaler_demo.transform(input_data)
                 
+                # Predictions from all three models
                 prediction = model.predict(input_scaled)[0]
                 proba = model.predict_proba(input_scaled)[0][1]
                 
+                # Predict heart disease type
+                heart_pred_encoded = model_heart.predict(input_scaled)[0]
+                heart_types_map = {0: 'None', 1: 'CHD', 2: 'Arrhythmia', 3: 'Heart Failure', 4: 'Valvular'}
+                predicted_heart_disease = heart_types_map.get(heart_pred_encoded, 'Unknown')
+                heart_proba = model_heart.predict_proba(input_scaled)[0]
+                heart_confidence = np.max(heart_proba) * 100
+                
+                # Predict cancer stage
+                cancer_pred_encoded = model_cancer.predict(input_scaled)[0]
+                cancer_stages_map = {0: 'None', 1: 'Stage 1', 2: 'Stage 2', 3: 'Stage 3', 4: 'Stage 4'}
+                predicted_cancer_stage = cancer_stages_map.get(cancer_pred_encoded, 'Unknown')
+                cancer_proba = model_cancer.predict_proba(input_scaled)[0]
+                cancer_confidence = np.max(cancer_proba) * 100
+                
                 # Display Result
                 st.markdown("---")
-                st.subheader("📋 Diagnosis Report")
+                st.subheader("📋 Comprehensive Diagnosis Report")
                 
-                col_res1, col_res2 = st.columns(2)
+                col_res1, col_res2, col_res3 = st.columns(3)
                 with col_res1:
-                    st.write(f"**Heart Disease Type:** {heart_disease}")
-                    st.write(f"**Cancer Stage:** {cancer_stage}")
+                    st.write(f"**Heart Disease Type:**")
+                    st.info(f"{predicted_heart_disease} ({heart_confidence:.1f}% confidence)")
                 
                 with col_res2:
+                    st.write(f"**Cancer Stage:**")
+                    st.info(f"{predicted_cancer_stage} ({cancer_confidence:.1f}% confidence)")
+                
+                with col_res3:
+                    st.write(f"**Disease Risk:**")
                     if prediction == 1:
-                        st.error(f"⚠️ High Risk Assessment ({proba*100:.1f}%)")
+                        st.error(f"⚠️ High Risk ({proba*100:.1f}%)")
                     else:
-                        st.success(f"✅ Healthy Profile ({(1-proba)*100:.1f}% confidence)")
+                        st.success(f"✅ Low Risk ({(1-proba)*100:.1f}%)")
                 
                 # Vital Signs Summary
+                st.markdown("---")
                 st.write("**Vital Signs Summary:**")
                 vital_data = pd.DataFrame({
                     'Metric': ['Age', 'Cholesterol', 'Blood Pressure', 'Max Heart Rate', 'BMI'],
