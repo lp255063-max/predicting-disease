@@ -1,4 +1,3 @@
-import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -9,6 +8,20 @@ from sklearn.metrics import accuracy_score, confusion_matrix, classification_rep
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.multiclass import OneVsRestClassifier
+
+# Prevent running the Streamlit app with plain `python` (avoids many warnings)
+try:
+    from streamlit.runtime.scriptrunner.script_run_context import get_script_run_ctx
+except Exception:
+    def get_script_run_ctx():
+        return None
+
+if __name__ == "__main__":
+    if get_script_run_ctx() is None:
+        print("This app is intended to run with Streamlit.\nRun it using:\n\n    streamlit run disease_app.py")
+        raise SystemExit(0)
+
+import streamlit as st
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(page_title="MediPulse AI", layout="wide", initial_sidebar_state="expanded")
@@ -228,7 +241,7 @@ if page == "🏠 Home (Front)":
         fig = px.pie(values=counts, names=['Healthy', 'Disease'], 
                      color_discrete_sequence=['#48bb78', '#f56565'],
                      hole=0.4, template="simple_white")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 # --- PAGE 2: BACK PAGE (FANTASTIC DECOR) ---
 elif page == "🔬 Analysis (Back)":
@@ -258,7 +271,7 @@ elif page == "🔬 Analysis (Back)":
             textfont={"size": 15, "color": "white"}
         ))
         fig_cm.update_layout(template="plotly_dark")
-        st.plotly_chart(fig_cm, use_container_width=True)
+        st.plotly_chart(fig_cm, width='stretch')
         
         # Classification Report (JSON format)
         with st.expander("Detailed Classification Report"):
@@ -281,7 +294,7 @@ elif page == "🔬 Analysis (Back)":
         fig_roc.update_layout(template="plotly_dark", 
                               xaxis_title='False Positive Rate', 
                               yaxis_title='True Positive Rate')
-        st.plotly_chart(fig_roc, use_container_width=True)
+        st.plotly_chart(fig_roc, width='stretch')
         
         # PREDICTION FORM
         st.markdown("---")
